@@ -16,18 +16,24 @@ We need snapshot to get all the aspects!
 
 Solution components:
 * node.js
-* https://github.com/lantanagroup/FHIR.js
+* https://github.com/lantanagroup/FHIR.js for validating the profile
 * hl7 max and xml2js to read the max zibs2017
 
 Setup:
+```
 > unzip definitions.json.zip -d definitions
 > tar -zxvf nictiz.fhir.nl.stu3.zib2017-prerelease-2.0.0-beta2.tgz
 > .. and put "ZIBS Publicatieversie 2017.max" in the definitions folder
 > npm init
+```
 
 Run:
+```
 > node index.js > output.txt
+```
 
 You can also start a node Docker container and run it there:
+```
 > docker run -it -v "`pwd`":/app node /bin/bash
+```
 
