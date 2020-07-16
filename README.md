@@ -14,6 +14,10 @@ Inputs:
 * pre-elease Snapshots! https://simplifier.net/packages/nictiz.fhir.nl.stu3.zib2017-prerelease/2.0.0-beta2/snapshots/download
 We need snapshot to get all the aspects!
 
+Inputs eOverdracht beta:
+* https://simplifier.net/nictizstu3-zib2017/$download?format=json&filter=Resource
+* For this first generate snapshots! index-snapshot.js
+
 Solution components:
 * node.js
 * https://github.com/lantanagroup/FHIR.js for validating the profile
@@ -29,11 +33,11 @@ Setup:
 
 Run:
 ```
-> node index.js > output.txt
+> node index.js > report.xml
 ```
+Import the report.xml into a spreadsheet.
 
 You can also start a node Docker container and run it there:
 ```
 > docker run -it -v "`pwd`":/app node /bin/bash
 ```
-
