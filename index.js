@@ -136,6 +136,8 @@ fs.readdirSync("package").forEach(filename => {
                                         else if (concept.datatype == 'ST' && fhirdt == "Annotation") compatible = "OK";
                                         else if (concept.datatype == 'PQ' && fhirdt == "Duration") compatible = "OK";
                                         else if (concept.datatype == 'PQ' && fhirdt == "Quantity") compatible = "OK";
+                                        else if (concept.datatype == 'PQ' && fhirdt == "integer") compatible = "WARN"; // what is the unit?
+                                        else if (concept.datatype == 'PQ' && fhirdt == "decimal") compatible = "WARN"; // what is the unit?
                                         else if (concept.datatype == 'CD' && fhirdt == "CodeableConcept") compatible = "OK";
                                         else if (concept.datatype == 'CD' && fhirdt == "code") compatible = "OK";
                                         else if (concept.datatype == 'CD' && fhirdt == "Coding") compatible = "OK";
@@ -143,6 +145,7 @@ fs.readdirSync("package").forEach(filename => {
                                         else if (concept.datatype == 'CO' && fhirdt == "Coding") compatible = "OK";
                                         else if (concept.datatype == 'TS' && fhirdt == "dateTime") compatible = "OK";
                                         else if (concept.datatype == 'TS' && fhirdt == "date") compatible = "OK";
+                                        else if (concept.datatype == 'TS' && fhirdt == "Period") compatible = "ERROR start|end";
                                         else if (concept.datatype == 'BL' && fhirdt == "boolean") compatible = "OK";
                                         else if (concept.datatype == 'INT' && fhirdt == "integer") compatible = "OK";
                                         else if (concept.datatype == 'INT' && fhirdt == "Quantity") compatible = "WARN"; // what is the unit?
@@ -168,6 +171,8 @@ fs.readdirSync("package").forEach(filename => {
                                             var fhir_datatype_error;
                                             if (fhirdt == "Extension") reportLine.fhir_datatype_error = "CHECK Extension";
                                             else if (reportLine.zib_datatype == 'container' && fhirdt == "Reference") fhir_datatype_error = "OK";
+                                            else if (reportLine.zib_datatype == 'container' && fhirdt == undefined) fhir_datatype_error = "OK";
+                                            else if (reportLine.zib_datatype == 'rootconcept' && fhirdt == undefined) fhir_datatype_error = "OK";
                                             else if (reportLine.zib_datatype == 'rootconcept' && fhirdt != undefined) fhir_datatype_error = "WARN";
                                             else fhir_datatype_error = "ERROR";
                                             reportLine.fhir_datatype_error = fhir_datatype_error;
