@@ -1,10 +1,23 @@
 Check zib 2017 mappings to FHIR
 
 Aspects:
+* Short and Alias
 * Are all zib elements mapped at least once?
 * N.B. Some zibs are mapped to multiple resources
 * Cardinalities
-* TODO: Coding
+* Datatype
+* TODO: Coding (DefinitionCode)
+    mapping [ {
+    "identity": "sct-attr",
+    "uri": "http://snomed.info/sct",
+    "name": "SNOMED CT Attribute Binding"
+    } ]
+    element.mapping [ {
+        "identity": "sct-attr",
+        "map": "718497002 |Inherent location|"
+    } ]
+* TODO: ValueSet
+    element.binding { valueSetReference: { reference, display } }
 * TODO: Url to zibs.nl
 
 Inputs:
@@ -28,7 +41,7 @@ Setup:
 > unzip definitions.json.zip -d definitions
 > tar -zxvf nictiz.fhir.nl.stu3.zib2017-prerelease-2.0.0-beta2.tgz
 > .. and put "ZIBS Publicatieversie 2017.max" in the definitions folder
-> npm init
+> npm update
 ```
 
 Run:

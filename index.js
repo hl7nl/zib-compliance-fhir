@@ -15,7 +15,7 @@ var parser = new ParseConformance(false, FhirVersions.STU3);           // don't 
 parser.parseBundle(newValueSets);
 parser.parseBundle(newTypes);
 parser.parseBundle(newResources);
-var fhir = new Fhir();
+var fhir = new Fhir(parser);
 
 // read and parse zibs from max xml source to json
 var xmlParser = new xml2js.Parser();
