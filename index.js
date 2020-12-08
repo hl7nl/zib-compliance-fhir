@@ -5,19 +5,27 @@ var fs = require('fs');
 var xml2js = require('xml2js');
 const yargs = require('yargs');
 
+// Parse command line options and argumens
 const argv = yargs
     .option('max-file', {
         alias: 'm',
         description: 'Path to .max file',
-        type: 'string'
+        type: 'string',
+        demandOption: true
     })
     .option('restrict-missing', {
         alias: 'r',
         description: 'Restrict the check for missing arguments to the zibs that have been mapped to the provided profiles',
         type: 'boolean',
     })
+    .option('allow-level', {
+        alias: 'l',
+        description: 'A number from 0-2 to indicate at which level errors are still allowed (0=error, 1=warning, 2=allow all). If errors below the specified level occur, this script will exit with a non-zero status.',
+        type: 'number',
+        default: 1
+
+    })
     .command("$0 [options] <files..>", "")
-    .demandOption(['max-file'])
     .help().alias('help', 'h')
     .argv;
 
@@ -94,7 +102,10 @@ zibs.model.objects[0].object.forEach(object => {
 var _zibIdsMapped = [];
 
 // Collect all NL-CM:xx.xx prefixes that are present in the supplied structuredefinitions
-var cmPrefixes = new Set()
+var cmPrefixes = new Set();
+
+// Collect the lowest warning level along the way (0 = error, 1 = warning, 2 = none)
+var lowestWarnLevel = 2;
 
 // find structure definitions filenames with mappings to "-2017EN"
 console.log("<report>");
@@ -209,6 +220,7 @@ argv.files.forEach(filename => {
                                         if ((concept.cardinality == '0..*' || concept.cardinality == '1..*') && element.max == '1') reportLine.fhir_card_warn = "ERROR";
                                     }
                                     reportLineToXml(reportLine);
+                                    lowestWarnLevel = Math.min(lowestWarnLevel, getWarnLevel(reportLine));
                                 }
                             });
                         }
@@ -218,10 +230,19 @@ argv.files.forEach(filename => {
                     console.error("  ERROR: has no snapshot?? " + filename);
                 }
             }
+            console.log("</structuredefinition>")
         }
     }
 });
 console.log("</report>");
+
+// Return with a succes or failure status code
+if (lowestWarnLevel < argv["allow-level"]) {
+    console.log("There were errors");
+    process.exit(1);
+} else {
+    console.log("All OK");
+}
 
 // show not mapped zibIds
 Object.keys(_conceptsById).forEach(zibId => {
@@ -240,6 +261,7 @@ Object.keys(_conceptsById).forEach(zibId => {
                 else {
                     console.error("  WARN: not mapped ???." + _conceptsById[zibId].name + " " + zibId);
                 }
+                lowestWarnLevel = Math.min(lowestWarnLevel, 1);
             }
         }
     }
@@ -268,6 +290,31 @@ function reportLineToXml(report) {
     console.log(line);
 }
 
+/**
+ * Get the lowest error level from the constructed reportLine
+ * @param {Object} reportLine 
+ */
+function getWarnLevel(reportLine) {
+    return ["fhir_short_warn", "fhir_alias_warn", "fhir_datatype_error", "fhir_card_warn"].map(el => {
+        if (reportLine[el]) {
+            if (reportLine[el].startsWith("OK")) {
+                return 2;
+            } else if (reportLine[el].startsWith("WARN")) {
+                return 1;
+            } else if (reportLine[el].startsWith("ERROR")) {
+                return 0;
+            }
+        }
+        return 2;
+    }).reduce((result, curr) => {
+        return Math.min(result, curr)
+    })
+}
+
+/**
+ * Extract the "CM-NL:xx.xx" prefix from a concept id string
+ * @param {string} cmString - a full zib concept id string
+ */
 function getCMPrefix(cmString) {
     return cmString.replace(/(NL-CM:[0-9]+\.[0-9]+)\..+/, "$1");
 }
