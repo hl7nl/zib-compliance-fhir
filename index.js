@@ -13,7 +13,7 @@ const argv = yargs
     })
     .option('restrict-missing', {
         alias: 'r',
-        description: 'Restrict the check for missing arguments to the zibs that have been mapped to the provide profiles',
+        description: 'Restrict the check for missing arguments to the zibs that have been mapped to the provided profiles',
         type: 'boolean',
     })
     .command("$0 [options] <files..>", "")
@@ -93,10 +93,14 @@ zibs.model.objects[0].object.forEach(object => {
 
 var _zibIdsMapped = [];
 
+// Collect all NL-CM:xx.xx prefixes that are present in the supplied structuredefinitions
+var cmPrefixes = new Set()
+
 // find structure definitions filenames with mappings to "-2017EN"
 console.log("<report>");
-fs.readdirSync("package").forEach(filename => {
-    var json = fs.readFileSync("package/" + filename);
+
+argv.files.forEach(filename => {
+    var json = fs.readFileSync(filename);
 
     // zib compliance check only for StructureDefinitions
     var resource = JSON.parse(json);
@@ -125,6 +129,8 @@ fs.readdirSync("package").forEach(filename => {
                             // check mappings and only handle 2017EN mappings
                             element.mapping.forEach(mapping => {
                                 if (/-2017EN/.test(mapping.identity)) {
+                                    cmPrefixes.add(getCMPrefix(mapping.map))
+
                                     var reportLine = { fhir_filename: filename, fhir_id: resource.id };
                                     var zibConceptId = mapping.map;
                                     if (_zibIdsMapped.indexOf(zibConceptId) == -1) _zibIdsMapped.push(zibConceptId);
@@ -222,14 +228,18 @@ Object.keys(_conceptsById).forEach(zibId => {
     if (_zibIdsMapped.indexOf(zibId) == -1) {
         // ignore containers and rootconcepts
         if (_conceptsById[zibId].stereotype != "container" && _conceptsById[zibId].stereotype != "rootconcept") {
-            var parentId = _conceptsById[zibId].parentId;
-            // find rootconcept with this concept
-            var rootconcept = zibs.model.objects[0].object.find(obj => obj.stereotype == "rootconcept" && obj.parentId[0] == parentId[0]);
-            if (rootconcept) {
-                console.error("  WARN: not mapped " + rootconcept.name + "." + _conceptsById[zibId].name + " " + zibId);
-            }
-            else {
-                console.error("  WARN: not mapped ???." + _conceptsById[zibId].name + " " + zibId);
+            
+            let cmPrefix = getCMPrefix(zibId)
+            if (!argv.r || cmPrefixes.has(cmPrefix)) { // If the -r flag is set, only report from zibs that are in the supplied profiles
+                var parentId = _conceptsById[zibId].parentId;
+                // find rootconcept with this concept
+                var rootconcept = zibs.model.objects[0].object.find(obj => obj.stereotype == "rootconcept" && obj.parentId[0] == parentId[0]);
+                if (rootconcept) {
+                    console.error("  WARN: not mapped " + rootconcept.name + "." + _conceptsById[zibId].name + " " + zibId);
+                }
+                else {
+                    console.error("  WARN: not mapped ???." + _conceptsById[zibId].name + " " + zibId);
+                }
             }
         }
     }
@@ -256,4 +266,8 @@ function reportLineToXml(report) {
     line += "<fhir_id>" + report.fhir_id + "</fhir_id>";
     line += "</line>";
     console.log(line);
+}
+
+function getCMPrefix(cmString) {
+    return cmString.replace(/(NL-CM:[0-9]+\.[0-9]+)\..+/, "$1");
 }
