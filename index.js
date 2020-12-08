@@ -3,7 +3,23 @@ var ParseConformance = require('fhir').ParseConformance;
 var FhirVersions = require('fhir').Versions;
 var fs = require('fs');
 var xml2js = require('xml2js');
-const { report } = require('process');
+const yargs = require('yargs');
+
+const argv = yargs
+    .option('max-file', {
+        alias: 'm',
+        description: 'Path to .max file',
+        type: 'string'
+    })
+    .option('restrict-missing', {
+        alias: 'r',
+        description: 'Restrict the check for missing arguments to the zibs that have been mapped to the provide profiles',
+        type: 'boolean',
+    })
+    .command("$0 [options] <files..>", "")
+    .demandOption(['max-file'])
+    .help().alias('help', 'h')
+    .argv;
 
 // // Get the data
 var newValueSets = JSON.parse(fs.readFileSync('definitions/valuesets.json').toString());
@@ -19,7 +35,7 @@ var fhir = new Fhir(parser);
 
 // read and parse zibs from max xml source to json
 var xmlParser = new xml2js.Parser();
-var max = fs.readFileSync('definitions/ZIBS Publicatieversie 2017.max');
+var max = fs.readFileSync(argv["max-file"]);
 var zibs = {};
 xmlParser.parseString(max, function (err, result) {
     zibs = result;

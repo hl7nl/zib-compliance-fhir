@@ -9,7 +9,8 @@
   "author": "Michael van der Zel",
   "license": "CC-BY-4.0",
   "dependencies": {
-    "fhir": "^4.7.9",
-    "xml2js": "^0.4.23"
+    "fhir": "^4.7.11",
+    "xml2js": "^0.4.23",
+    "yargs": "^16.2.0"
   }
 }
