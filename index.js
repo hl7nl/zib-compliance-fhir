@@ -20,6 +20,13 @@ const argv = yargs
         choices: ['2017', '2020'],
         demandOption: true
     })
+    .option('fhir-version', {
+        alias: 'v',
+        description: 'The FHIR version to use (the "fhirVersion" element in the structuredefinitions will be ignored).\nIf the version is STU3, the definitions should be present in the "definitions" folder.',
+        type: 'string',
+        choices: ['STU3', 'R4'],
+        default: 'R4'
+    })
     .option('restrict-missing', {
         alias: 'r',
         description: 'Restrict the check for missing arguments to the zibs that have been mapped to the provided profiles',
@@ -41,17 +48,20 @@ const argv = yargs
     .help().alias('help', 'h')
     .argv;
 
-// // Get the data
-var newValueSets = JSON.parse(fs.readFileSync('definitions/valuesets.json').toString());
-var newTypes = JSON.parse(fs.readFileSync('definitions/profiles-types.json').toString());
-var newResources = JSON.parse(fs.readFileSync('definitions/profiles-resources.json').toString());
-
-// // Create a parser and parse it using the parser
-var parser = new ParseConformance(false, FhirVersions.STU3);           // don't load pre-parsed data
-parser.parseBundle(newValueSets);
-parser.parseBundle(newTypes);
-parser.parseBundle(newResources);
-var fhir = new Fhir(parser);
+// Instantiate the FHIR parser
+if (argv["fhir-version"] == "STU3") {
+    // Fhir versions other than R4 need to manually load the definitions
+    var newValueSets = JSON.parse(fs.readFileSync('definitions/valuesets.json').toString());
+    var newTypes = JSON.parse(fs.readFileSync('definitions/profiles-types.json').toString());
+    var newResources = JSON.parse(fs.readFileSync('definitions/profiles-resources.json').toString());
+    var parser = new ParseConformance(false, FhirVersions.STU3);
+    parser.parseBundle(newValueSets);
+    parser.parseBundle(newTypes);
+    parser.parseBundle(newResources);
+    var fhir = new Fhir(parser);
+} else {
+    var fhir = new Fhir();
+}
 
 // read and parse zibs from max xml source to json
 var xmlParser = new xml2js.Parser();
@@ -350,7 +360,7 @@ function report(xml = null, text = null, ...args) {
         output = text;
     }
     if (typeof output == 'function') {
-        output = output(args);
+        output = output.apply(this, args);
     }
     if (output) {
         console.log(output);
