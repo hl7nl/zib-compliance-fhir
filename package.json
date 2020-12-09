@@ -10,6 +10,7 @@
   "license": "CC-BY-4.0",
   "dependencies": {
     "fhir": "^4.7.11",
+    "js-yaml": "^3.14.1",
     "xml2js": "^0.4.23",
     "yargs": "^16.2.0"
   }

@@ -3,6 +3,7 @@ var ParseConformance = require('fhir').ParseConformance;
 var FhirVersions = require('fhir').Versions;
 var fs = require('fs');
 var xml2js = require('xml2js');
+const yaml = require('js-yaml');
 const yargs = require('yargs');
 
 // Parse command line options and argumens
@@ -37,6 +38,10 @@ const argv = yargs
         description: 'A number from 0-2 to indicate at which level errors are still allowed (0=error, 1=warning, 2=allow all). If errors below the specified level occur, this script will exit with a non-zero status.',
         type: 'number',
         default: 1
+    }).option('known-issues', {
+        alias: 'k',
+        description: 'YAML file of known issues',
+        type: 'string'
     }).option('output-format', {
         alias: 'f',
         description: 'Set the output format to either text or XML.\nIn both cases, the output will be printed to stdout.\nWhen the output us XML, a complete record of all found elements is created, while additional problems are printed to stderr.\nWhen the output format is text, only the issues found are printed.',
@@ -121,6 +126,36 @@ zibs.model.objects[0].object.forEach(object => {
     }
 });
 
+var knownIssues = {};
+if (argv["known-issues"]) {
+    // Some rewriting is needed. When loading the YAML file, the individual issues are represented as an array
+    // containing maps, where the first entry is the key of the issue with the associated value (and the second the
+    // description of the reason). This needs to be flattened to a map with the key of the issue and its associated
+    // value. And while we're here, we can do some error checking.  
+    let raw = yaml.safeLoad(fs.readFileSync(argv["known-issues"], 'utf8'));
+    Object.keys(raw).forEach(resourceId => {
+        knownIssues[resourceId] = {};
+        Object.keys(raw[resourceId]).forEach(fhirPath => {
+            let issues = {};
+            raw[resourceId][fhirPath].forEach(issue => {
+                let key = Object.keys(issue)[0];
+                if (["short", "cardinality"].includes(key)) {
+                    issues[key] = issue[key];
+                } else {
+                    console.error(`Error parsing known issues file: unknown key '${key}'`);
+                    process.exit(1);
+                }
+                if (!("reason" in issue)) {
+                    console.error(`Missing reason for known issue '${key}' in ${resourceId}/${fhirPath}`)
+                    process.exit(1);
+                }
+                issues[key] = issue[key];
+            });
+            knownIssues[resourceId][fhirPath] = issues;
+        })
+    })
+}
+
 var _zibIdsMapped = [];
 
 // Collect all NL-CM:xx.xx prefixes that are present in the supplied structuredefinitions
@@ -179,7 +214,6 @@ argv.files.forEach(filename => {
                                 if (zibRegEx.test(mapping.identity)) {
                                     cmPrefixes.add(getCMPrefix(mapping.map))
 
-                                    var reportLine = { fhir_filename: filename, fhir_id: resource.id };
                                     var zibConceptId = mapping.map;
                                     if (_zibIdsMapped.indexOf(zibConceptId) == -1) _zibIdsMapped.push(zibConceptId);
                                     var concept = _conceptsById[zibConceptId];
@@ -188,75 +222,89 @@ argv.files.forEach(filename => {
                                         return;
                                     }
 
-                                    var element_short = element.short.toString();
-                                    var aliasEn = concept.alias[0].substring(3).trim();
-                                    var element_alias = element.alias?element.alias.toString():'';
-                                    var object_name = concept.name.toString();
+                                    // Load overrides for the various checks from the object with known issues.
+                                    // Although these known issues target the values found in the StructureDefinition,
+                                    // they will be loaded into the _expected_ zib values to make the comparison work.
+                                    var knownIssue = {};
+                                    if (resource.id in knownIssues && element.path in knownIssues[resource.id]) {
+                                        knownIssue = knownIssues[resource.id][element.path];
+                                    }
 
-                                    reportLine.zib_concept_id = zibConceptId;
-                                    reportLine.fhir_path = element.path;
-                                    reportLine.zib_alias_en = aliasEn;
-                                    reportLine.fhir_short = element_short;
-                                    reportLine.fhir_short_warn = (aliasEn != element_short)?"WARN":"OK";
-                                    reportLine.zib_name = object_name;
-                                    reportLine.fhir_alias = element_alias;
-                                    reportLine.fhir_alias_warn = (element_alias.indexOf(object_name) == -1)?"WARN":"OK";
+                                    var reportLine = {
+                                        fhir_filename : filename,
+                                        fhir_id       : resource.id,
+                                        zib_concept_id: zibConceptId,
+                                        fhir_path     : element.path
+                                    };
+
+                                    var elementShort = element.short.toString();
+                                    var conceptAliasEn = ("short" in knownIssue) ? knownIssue["short"] : concept.alias[0].substring(3).trim();
+                                    var elementAlias = element.alias?element.alias.toString():'';
+                                    var conceptName = concept.name.toString();
+
+                                    reportLine.zib_alias_en = conceptAliasEn;
+                                    reportLine.fhir_short = elementShort;
+                                    reportLine.fhir_short_warn = (conceptAliasEn != elementShort)?"WARN":"OK";
+                                    reportLine.zib_name = conceptName;
+                                    reportLine.fhir_alias = elementAlias;
+                                    reportLine.fhir_alias_warn = (elementAlias.indexOf(conceptName) == -1)?"WARN":"OK";
 
                                     if (concept.datatype) {
-                                        var fhirdt = (element.type?element.type[0].code:undefined);
+                                        var fhirDt = (element.type?element.type[0].code:undefined);
                                         var compatible;
-                                        if (concept.datatype == 'II' && fhirdt == "Identifier") compatible = "OK";
-                                        else if (concept.datatype == 'ST' && fhirdt == "string") compatible = "OK";
-                                        else if (concept.datatype == 'ST' && fhirdt == "Annotation") compatible = "OK";
-                                        else if (concept.datatype == 'PQ' && fhirdt == "Duration") compatible = "OK";
-                                        else if (concept.datatype == 'PQ' && fhirdt == "Quantity") compatible = "OK";
-                                        else if (concept.datatype == 'PQ' && fhirdt == "integer") compatible = "WARN"; // what is the unit?
-                                        else if (concept.datatype == 'PQ' && fhirdt == "decimal") compatible = "WARN"; // what is the unit?
-                                        else if (concept.datatype == 'CD' && fhirdt == "CodeableConcept") compatible = "OK";
-                                        else if (concept.datatype == 'CD' && fhirdt == "code") compatible = "OK";
-                                        else if (concept.datatype == 'CD' && fhirdt == "Coding") compatible = "OK";
-                                        else if (concept.datatype == 'CD' && fhirdt == "string") compatible = "WARN"; // what is the codesystem
-                                        else if (concept.datatype == 'CO' && fhirdt == "Coding") compatible = "OK";
-                                        else if (concept.datatype == 'TS' && fhirdt == "dateTime") compatible = "OK";
-                                        else if (concept.datatype == 'TS' && fhirdt == "date") compatible = "OK";
-                                        else if (concept.datatype == 'TS' && fhirdt == "Period") compatible = "ERROR start|end";
-                                        else if (concept.datatype == 'BL' && fhirdt == "boolean") compatible = "OK";
-                                        else if (concept.datatype == 'INT' && fhirdt == "integer") compatible = "OK";
-                                        else if (concept.datatype == 'INT' && fhirdt == "Quantity") compatible = "WARN"; // what is the unit?
-                                        else if (concept.datatype == 'ED' && fhirdt == "base64Binary") compatible = "OK";
-                                        else if (concept.datatype == 'ED' && fhirdt == "Attachement") compatible = "OK";
-                                        else if (fhirdt == "Extension") compatible = "CHECK extension.value[x]";
+                                        if (concept.datatype == 'II' && fhirDt == "Identifier") compatible = "OK";
+                                        else if (concept.datatype == 'ST' && fhirDt == "string") compatible = "OK";
+                                        else if (concept.datatype == 'ST' && fhirDt == "Annotation") compatible = "OK";
+                                        else if (concept.datatype == 'PQ' && fhirDt == "Duration") compatible = "OK";
+                                        else if (concept.datatype == 'PQ' && fhirDt == "Quantity") compatible = "OK";
+                                        else if (concept.datatype == 'PQ' && fhirDt == "integer") compatible = "WARN"; // what is the unit?
+                                        else if (concept.datatype == 'PQ' && fhirDt == "decimal") compatible = "WARN"; // what is the unit?
+                                        else if (concept.datatype == 'CD' && fhirDt == "CodeableConcept") compatible = "OK";
+                                        else if (concept.datatype == 'CD' && fhirDt == "code") compatible = "OK";
+                                        else if (concept.datatype == 'CD' && fhirDt == "Coding") compatible = "OK";
+                                        else if (concept.datatype == 'CD' && fhirDt == "string") compatible = "WARN"; // what is the codesystem
+                                        else if (concept.datatype == 'CO' && fhirDt == "Coding") compatible = "OK";
+                                        else if (concept.datatype == 'TS' && fhirDt == "dateTime") compatible = "OK";
+                                        else if (concept.datatype == 'TS' && fhirDt == "date") compatible = "OK";
+                                        else if (concept.datatype == 'TS' && fhirDt == "Period") compatible = "ERROR start|end";
+                                        else if (concept.datatype == 'BL' && fhirDt == "boolean") compatible = "OK";
+                                        else if (concept.datatype == 'INT' && fhirDt == "integer") compatible = "OK";
+                                        else if (concept.datatype == 'INT' && fhirDt == "Quantity") compatible = "WARN"; // what is the unit?
+                                        else if (concept.datatype == 'ED' && fhirDt == "base64Binary") compatible = "OK";
+                                        else if (concept.datatype == 'ED' && fhirDt == "Attachement") compatible = "OK";
+                                        else if (fhirDt == "Extension") compatible = "CHECK extension.value[x]";
                                         else compatible = "ERROR";
                                         reportLine.zib_datatype = concept.datatype;
-                                        reportLine.fhir_datatype = fhirdt;
+                                        reportLine.fhir_datatype = fhirDt;
                                         reportLine.fhir_datatype_error = compatible;
                                     }
                                     else {
                                         var tag1 = concept.tag.find(tag => tag.$.name === 'DCM::ReferencedConceptId');
                                         var tag2 = concept.tag.find(tag => tag.$.name === 'DCM::ReferencedDefinitionCode');
-                                        var fhirdt = (element.type?element.type[0].code:undefined);
-                                        reportLine.fhir_datatype = fhirdt;
+                                        var fhirDt = (element.type?element.type[0].code:undefined);
+                                        reportLine.fhir_datatype = fhirDt;
                                         if (tag1 || tag2) {
                                             reportLine.zib_datatype = "reference";
-                                            reportLine.fhir_datatype_error = (fhirdt != "Reference")?"WARN":"OK";
+                                            reportLine.fhir_datatype_error = (fhirDt != "Reference")?"WARN":"OK";
                                         }
                                         else {
                                             reportLine.zib_datatype = concept.stereotype;
                                             var fhir_datatype_error;
-                                            if (fhirdt == "Extension") reportLine.fhir_datatype_error = "CHECK Extension";
-                                            else if (reportLine.zib_datatype == 'container' && fhirdt == "Reference") fhir_datatype_error = "OK";
-                                            else if (reportLine.zib_datatype == 'container' && fhirdt == undefined) fhir_datatype_error = "OK";
-                                            else if (reportLine.zib_datatype == 'rootconcept' && fhirdt == undefined) fhir_datatype_error = "OK";
-                                            else if (reportLine.zib_datatype == 'rootconcept' && fhirdt != undefined) fhir_datatype_error = "WARN";
+                                            if (fhirDt == "Extension") reportLine.fhir_datatype_error = "CHECK Extension";
+                                            else if (reportLine.zib_datatype == 'container' && fhirDt == "Reference") fhir_datatype_error = "OK";
+                                            else if (reportLine.zib_datatype == 'container' && fhirDt == undefined) fhir_datatype_error = "OK";
+                                            else if (reportLine.zib_datatype == 'rootconcept' && fhirDt == undefined) fhir_datatype_error = "OK";
+                                            else if (reportLine.zib_datatype == 'rootconcept' && fhirDt != undefined) fhir_datatype_error = "WARN";
                                             else fhir_datatype_error = "ERROR";
                                             reportLine.fhir_datatype_error = fhir_datatype_error;
                                         }
                                     }
                                     if (concept.cardinality) {
-                                        var card = element.min + ".." + element.max;
-                                        reportLine.zib_card = concept.cardinality;
-                                        reportLine.fhir_card = card;
-                                        reportLine.fhir_card_warn = (card != concept.cardinality)?"WARN":"OK";
+                                        var zibCard = ("cardinality" in knownIssue) ? knownIssue["cardinality"] : concept.cardinality;
+                                        var fhirCard = element.min + ".." + element.max;
+                                        reportLine.zib_card = zibCard;
+                                        reportLine.fhir_card = fhirCard;
+                                        reportLine.fhir_card_warn = (fhirCard != zibCard)?"WARN":"OK";
                                         // if fhir has strickter cardinality then error
                                         if ((concept.cardinality == '0..*' || concept.cardinality == '1..*') && element.max == '1') reportLine.fhir_card_warn = "ERROR";
                                     }
