@@ -149,11 +149,15 @@ argv.files.forEach(filename => {
                 if (!validated) {
                     // validate fhir structuredef only if there are any zib mappings
                     var result = fhir.validate(resource);
-                    // for some reason fhirVersion = 3.0.2 is always the first error message; ignore
-                    result.messages = result.messages.slice(1);
                     if (result.messages.length > 0) {
-                        console.error(filename);
-                        console.error(result);
+                        if (result.valid) {
+                            var level = 1;
+                            var type  = "WARN"
+                        } else {
+                            var level = 0;
+                            var type  = "ERROR"
+                        }
+                        reportError(`${type}: validating resource ${filename}\n` + JSON.stringify(result.messages, null, 4), level);
                     }
                 }
                 validated = true;
@@ -252,7 +256,7 @@ argv.files.forEach(filename => {
                     });
                 }
                 else {
-                    console.error("  ERROR: has no snapshot?? " + filename);
+                    reportError("ERROR: no snapshot for " + filename);
                 }
             }
             report("</structuredefinition>");
@@ -291,14 +295,12 @@ Object.keys(_conceptsById).forEach(zibId => {
         }
     }
 });
-console.error("zibConceptIds: " + Object.keys(_conceptsById).length + " mapped: " + _zibIdsMapped.length);
+reportError("zibConceptIds: " + Object.keys(_conceptsById).length + " mapped: " + _zibIdsMapped.length, 2);
 
 // Return with a succes or failure status code
 if (lowestWarnLevel < argv["allow-level"]) {
-    console.log("There were errors");
+    reportError("\nThere were errors below your threshold. The test has FAILED.");
     process.exit(1);
-} else {
-    console.log("All OK");
 }
 
 function reportLineToXml(report) {
@@ -367,6 +369,20 @@ function report(xml = null, text = null, ...args) {
     }
 }
 
+/**
+ * Report an error of some sort. When the output format is XML, it will be sent to stdout so it won't affect the XML
+ * output. When the output format is text, the message will be sent to stdout.
+ * @param {string} message 
+ * @param {int} [level=0] - The gravity of this error. This will be used to update lowestWarnLevel if needed.
+ */
+function reportError(message, level = 0) {
+    if (argv["output-format"] == "xml") {
+        console.error(message);
+    } else {
+        console.log(message);
+    }
+    lowestWarnLevel = Math.min(lowestWarnLevel, level);
+}
 /**
  * Get the lowest error level from the constructed reportLine
  * @param {Object} reportLine 
