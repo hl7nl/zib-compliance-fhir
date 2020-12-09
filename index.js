@@ -13,6 +13,13 @@ const argv = yargs
         type: 'string',
         demandOption: true
     })
+    .option('zib-release', {
+        alias: 'z',
+        description: 'The zib release to check mappings for',
+        type: 'string',
+        choices: ['2017', '2020'],
+        demandOption: true
+    })
     .option('restrict-missing', {
         alias: 'r',
         description: 'Restrict the check for missing arguments to the zibs that have been mapped to the provided profiles',
@@ -112,9 +119,10 @@ var cmPrefixes = new Set();
 // Collect the lowest warning level along the way (0 = error, 1 = warning, 2 = none)
 var lowestWarnLevel = 2;
 
-// find structure definitions filenames with mappings to "-2017EN"
-report("<report>");
+// The identifier to recognize mappings for the target zib release
+let zibRegEx = new RegExp("-" + argv["zib-release"] + "EN");
 
+report("<report>");
 argv.files.forEach(filename => {
     var json = fs.readFileSync(filename);
 
@@ -125,9 +133,9 @@ argv.files.forEach(filename => {
         if (resource.mapping) {
             report(`<structuredefinition name="${filename}">`, '==== ' + filename);
 
-            // does this resource have zib 2017 mappings?
-            var has2017Mappings = resource.mapping.find(mapping => /-2017EN/.test(mapping.identity));
-            if (has2017Mappings) {
+            // does this resource have mappings to the target zib release?
+            let hasZibReleaseMappings = resource.mapping.find(mapping => zibRegEx.test(mapping.identity));
+            if (hasZibReleaseMappings) {
                 if (!validated) {
                     // validate fhir structuredef only if there are any zib mappings
                     var result = fhir.validate(resource);
@@ -144,9 +152,9 @@ argv.files.forEach(filename => {
                 if (resource.snapshot) {
                     resource.snapshot.element.forEach(element => {
                         if (element.mapping) {
-                            // check mappings and only handle 2017EN mappings
+                            // check mappings and only handle mappings to the target zib release
                             element.mapping.forEach(mapping => {
-                                if (/-2017EN/.test(mapping.identity)) {
+                                if (zibRegEx.test(mapping.identity)) {
                                     cmPrefixes.add(getCMPrefix(mapping.map))
 
                                     var reportLine = { fhir_filename: filename, fhir_id: resource.id };
