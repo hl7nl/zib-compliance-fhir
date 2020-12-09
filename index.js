@@ -150,6 +150,14 @@ argv.files.forEach(filename => {
                     // validate fhir structuredef only if there are any zib mappings
                     var result = fhir.validate(resource);
                     if (result.messages.length > 0) {
+                        // Sometimes the validator complains that the FHIR version is unknown. if that's the case, we
+                        // remove the offending message first.
+                        if (result.messages[0].location == "StructureDefinition.fhirVersion" &&
+                            result.messages[0].message.match(/Code \"[0-9\.]+\" not found in value set/)) {
+                                result.messages = result.messages.slice(1);
+                        }
+                    }
+                    if (result.messages.length > 0) {
                         if (result.valid) {
                             var level = 1;
                             var type  = "WARN"
