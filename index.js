@@ -23,7 +23,12 @@ const argv = yargs
         description: 'A number from 0-2 to indicate at which level errors are still allowed (0=error, 1=warning, 2=allow all). If errors below the specified level occur, this script will exit with a non-zero status.',
         type: 'number',
         default: 1
-
+    }).option('output-format', {
+        alias: 'f',
+        description: 'Set the output format to either text or XML',
+        default: 'xml',
+        type: 'string',
+        choices: ['xml', 'text']
     })
     .command("$0 [options] <files..>", "")
     .help().alias('help', 'h')
@@ -108,7 +113,7 @@ var cmPrefixes = new Set();
 var lowestWarnLevel = 2;
 
 // find structure definitions filenames with mappings to "-2017EN"
-console.log("<report>");
+report("<report>");
 
 argv.files.forEach(filename => {
     var json = fs.readFileSync(filename);
@@ -118,6 +123,8 @@ argv.files.forEach(filename => {
     var validated = false;
     if (resource.resourceType == "StructureDefinition") {
         if (resource.mapping) {
+            report(`<structuredefinition name="${filename}">`, '==== ' + filename);
+
             // does this resource have zib 2017 mappings?
             var has2017Mappings = resource.mapping.find(mapping => /-2017EN/.test(mapping.identity));
             if (has2017Mappings) {
@@ -219,7 +226,7 @@ argv.files.forEach(filename => {
                                         // if fhir has strickter cardinality then error
                                         if ((concept.cardinality == '0..*' || concept.cardinality == '1..*') && element.max == '1') reportLine.fhir_card_warn = "ERROR";
                                     }
-                                    reportLineToXml(reportLine);
+                                    report(reportLineToXml, reportLineToText, reportLine);
                                     lowestWarnLevel = Math.min(lowestWarnLevel, getWarnLevel(reportLine));
                                 }
                             });
@@ -230,19 +237,11 @@ argv.files.forEach(filename => {
                     console.error("  ERROR: has no snapshot?? " + filename);
                 }
             }
-            console.log("</structuredefinition>")
+            report("</structuredefinition>");
         }
     }
 });
-console.log("</report>");
-
-// Return with a succes or failure status code
-if (lowestWarnLevel < argv["allow-level"]) {
-    console.log("There were errors");
-    process.exit(1);
-} else {
-    console.log("All OK");
-}
+report("</report>");
 
 // show not mapped zibIds
 Object.keys(_conceptsById).forEach(zibId => {
@@ -253,20 +252,36 @@ Object.keys(_conceptsById).forEach(zibId => {
             let cmPrefix = getCMPrefix(zibId)
             if (!argv.r || cmPrefixes.has(cmPrefix)) { // If the -r flag is set, only report from zibs that are in the supplied profiles
                 var parentId = _conceptsById[zibId].parentId;
+                let msg = ""
+
                 // find rootconcept with this concept
                 var rootconcept = zibs.model.objects[0].object.find(obj => obj.stereotype == "rootconcept" && obj.parentId[0] == parentId[0]);
                 if (rootconcept) {
-                    console.error("  WARN: not mapped " + rootconcept.name + "." + _conceptsById[zibId].name + " " + zibId);
+                    msg = "  WARN: not mapped " + rootconcept.name + "." + _conceptsById[zibId].name + " " + zibId;
                 }
                 else {
-                    console.error("  WARN: not mapped ???." + _conceptsById[zibId].name + " " + zibId);
+                    msg = "  WARN: not mapped ???." + _conceptsById[zibId].name + " " + zibId;
                 }
+                if (argv["output-format"] == "xml") {
+                    console.warn(msg);
+                } else {
+                    report(null, msg);
+                }
+
                 lowestWarnLevel = Math.min(lowestWarnLevel, 1);
             }
         }
     }
 });
 console.error("zibConceptIds: " + Object.keys(_conceptsById).length + " mapped: " + _zibIdsMapped.length);
+
+// Return with a succes or failure status code
+if (lowestWarnLevel < argv["allow-level"]) {
+    console.log("There were errors");
+    process.exit(1);
+} else {
+    console.log("All OK");
+}
 
 function reportLineToXml(report) {
     var line = "<line>";
@@ -287,7 +302,51 @@ function reportLineToXml(report) {
     line += "<fhir_filename>" + report.fhir_filename + "</fhir_filename>";
     line += "<fhir_id>" + report.fhir_id + "</fhir_id>";
     line += "</line>";
-    console.log(line);
+    return(line);
+}
+
+function reportLineToText(report) {
+    let lines = []
+    if (report.fhir_short_warn != 'OK') {
+        lines.push(`        short:       ${report.fhir_short_warn} (${report.zib_alias_en}/${report.fhir_short})`)
+    }
+    if (report.fhir_alias_warn != 'OK') {
+        lines.push(`        alias:       ${report.fhir_alias_warn} (${report.zib_name}/${report.fhir_alias})`)
+    }
+    if (report.fhir_datatype_error != 'OK') {
+        lines.push(`        datatype:    ${report.fhir_datatype_error} (${report.zib_datatype}/${report.fhir_datatype})`)
+    }
+    if (report.fhir_card_warn != 'OK') {
+        lines.push(`        cardinality: ${report.fhir_card_warn} (${report.zib_card}/${report.fhir_card})`)
+    }
+    if (lines.length > 0) {
+        lines = [`     == ${report.zib_concept_id} (${report.fhir_path})`].concat(lines)
+        return lines.join('\n');
+    }
+    return null
+}
+
+/**
+ * Report some xml or textual output, depending on the output format set by the user.
+ * @param {string|function|null} xml - a formatted XML string, or a function which returns a formatted string, to 
+ *                                     output when the output format is "xml".
+ * @param {string|function|null} text - a text string, or a function which returns a text string, to output when the
+ *                                      output format is "text".
+ * @param {any} args - the arguments to passed to the xml or text function.
+ */
+function report(xml = null, text = null, ...args) {
+    let output = null
+    if (argv["output-format"] == "xml" && xml != null) {
+        output = xml
+    } else if (argv["output-format"] == "text" && text != null) {
+        output = text;
+    }
+    if (typeof output == 'function') {
+        output = output(args);
+    }
+    if (output) {
+        console.log(output);
+    }
 }
 
 /**
