@@ -175,6 +175,10 @@ argv.files.forEach(filename => {
                                     var zibConceptId = mapping.map;
                                     if (_zibIdsMapped.indexOf(zibConceptId) == -1) _zibIdsMapped.push(zibConceptId);
                                     var concept = _conceptsById[zibConceptId];
+                                    if (!concept) {
+                                        reportError(`ERROR: unknown concept ${zibConceptId}`);
+                                        return;
+                                    }
 
                                     var element_short = element.short.toString();
                                     var aliasEn = concept.alias[0].substring(3).trim();
