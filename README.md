@@ -1,12 +1,14 @@
-Check zib 2017 mappings to FHIR
+# Check zib mappings to FHIR
 
-Aspects:
+## Aspects:
+
 * Short and Alias
 * Are all zib elements mapped at least once?
 * N.B. Some zibs are mapped to multiple resources
 * Cardinalities
 * Datatype
 * TODO: Coding (DefinitionCode)
+    ```
     mapping [ {
     "identity": "sct-attr",
     "uri": "http://snomed.info/sct",
@@ -16,39 +18,47 @@ Aspects:
         "identity": "sct-attr",
         "map": "718497002 |Inherent location|"
     } ]
+    ```
 * TODO: ValueSet
+    ```
     element.binding { valueSetReference: { reference, display } }
+    ```
 * TODO: Url to zibs.nl
 
-Inputs:
-* FHIR STU3 definitions from http://hl7.org/fhir/STU3/definitions.json.zip
-* ZIBS Publicatieversie 2017.max - get by MAX exporting the ZIBS EAP requested from Nictiz zib-centrum
-* latest release zibs2017 https://github.com/Nictiz/Nictiz-STU3-Zib2017/releases/tag/1.3.6
-* pre-elease Snapshots! https://simplifier.net/packages/nictiz.fhir.nl.stu3.zib2017-prerelease/2.0.0-beta2/snapshots/download
-We need snapshot to get all the aspects!
+## Inputs
 
-Inputs eOverdracht beta:
-* https://simplifier.net/nictizstu3-zib2017/$download?format=json&filter=Resource
-* For this first generate snapshots! index-snapshot.js
+* When using FHIR STU3: definitions from http://hl7.org/fhir/STU3/definitions.json.zip
+* ZIBS publication in MAX format - get by MAX exporting the ZIBS EAP requested from Nictiz zib-centrum
+* **Snapshotted** profiles and associated conformance resources in in JSON format:
+    * latest release zibs2017: https://simplifier.net/packages/nictiz.fhir.nl.stu3.zib2017/
 
-Solution components:
+## Solution components:
+
 * node.js
 * https://github.com/lantanagroup/FHIR.js for validating the profile
 * hl7 max and xml2js to read the max zibs2017
 
-Setup:
+## Usage
+
+### Setup
+
 ```
-> unzip definitions.json.zip -d definitions
-> tar -zxvf nictiz.fhir.nl.stu3.zib2017-prerelease-2.0.0-beta2.tgz
-> .. and put "ZIBS Publicatieversie 2017.max" in the definitions folder
+> Only when using FHIR STU3: unzip definitions.json.zip -d definitions
 > npm update
 ```
 
-Run:
+### Run
+
 ```
-> node index.js > report.xml
+> node index.js -h
 ```
-Import the report.xml into a spreadsheet.
+
+To see the documentation.
+
+The script can produce two types of output:
+
+* xml: The complete output will be sent to the stdout and can be captured using `> report.xml`. It can then be loaded into a spreadsheet. Additional errors will be reported to stdout.
+* text: Only the found issues are reported to stdout.
 
 You can also start a node Docker container and run it there:
 ```

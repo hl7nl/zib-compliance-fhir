@@ -39,7 +39,7 @@ const argv = yargs
         default: 1
     }).option('output-format', {
         alias: 'f',
-        description: 'Set the output format to either text or XML',
+        description: 'Set the output format to either text or XML.\nIn both cases, the output will be printed to stdout.\nWhen the output us XML, a complete record of all found elements is created, while additional problems are printed to stderr.\nWhen the output format is text, only the issues found are printed.',
         default: 'xml',
         type: 'string',
         choices: ['xml', 'text']
