@@ -33,11 +33,12 @@ const argv = yargs
         description: 'Restrict the check for missing arguments to the zibs that have been mapped to the provided profiles',
         type: 'boolean',
     })
-    .option('allow-level', {
-        alias: 'l',
-        description: 'A number from 0-2 to indicate at which level errors are still allowed (0=error, 1=warning, 2=allow all). If errors below the specified level occur, this script will exit with a non-zero status.',
-        type: 'number',
-        default: 1
+    .option('fail-at', {
+        alias: 'a',
+        description: 'The level at which issues are considered fatal (error or warning).',
+        type: 'string',
+        choices: ['error', 'warning'],
+        default: 'error'
     }).option('zib-overrides', {
         description: 'YAML file specifying zib concepts that are purposefully not mapped faithfully to the profiles. This file should look like:\n\n>  [resource id]:\n>    zib deviations:\n>      [element id]:\n>        - [deviation]: [value]\n>          reason: [Explanation for deviation]\n\nWhere [deviation] can be "cardinality", "datatype", "short" or "alias". For each element, multiple deviations may be specified. Note that for each deviation, a reason *must* be provided.',
         type: 'string'
@@ -380,7 +381,11 @@ Object.keys(_conceptsById).forEach(zibId => {
 reportError("zibConceptIds: " + Object.keys(_conceptsById).length + " mapped: " + _zibIdsMapped.length, 2);
 
 // Return with a succes or failure status code
-if (lowestWarnLevel < argv["allow-level"]) {
+let failAt = 0;
+if (argv['fail-at'] == 'warning') {
+    failAt = 1;
+}
+if (lowestWarnLevel <= failAt) {
     reportError("\nThere were errors below your threshold. The test has FAILED.");
     process.exit(1);
 }
