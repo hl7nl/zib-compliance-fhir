@@ -32,7 +32,7 @@
 * **Snapshotted** profiles and associated conformance resources in in JSON format:
     * latest release zibs2017: https://simplifier.net/packages/nictiz.fhir.nl.stu3.zib2017/
 
-## Solution components:
+## Solution components
 
 * node.js
 * https://github.com/lantanagroup/FHIR.js for validating the profile

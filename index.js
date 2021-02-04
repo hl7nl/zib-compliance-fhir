@@ -38,9 +38,8 @@ const argv = yargs
         description: 'A number from 0-2 to indicate at which level errors are still allowed (0=error, 1=warning, 2=allow all). If errors below the specified level occur, this script will exit with a non-zero status.',
         type: 'number',
         default: 1
-    }).option('known-issues', {
-        alias: 'k',
-        description: 'YAML file of known issues',
+    }).option('zib-overrides', {
+        description: 'YAML file specifying zib concepts that are purposefully not mapped faithfully to the profiles. This file should look like:\n\n>  [resource id]:\n>    zib deviations:\n>      [element id]:\n>        - [deviation]: [value]\n>          reason: [Explanation for deviation]\n\nWhere [deviation] can be "cardinality", "datatype", "short" or "alias". For each element, multiple deviations may be specified. Note that for each deviation, a reason *must* be provided.',
         type: 'string'
     }).option('output-format', {
         alias: 'f',
@@ -126,35 +125,52 @@ zibs.model.objects[0].object.forEach(object => {
     }
 });
 
-var knownIssues = {};
-if (argv["known-issues"]) {
-    // Some rewriting is needed. When loading the YAML file, the individual issues are represented as an array
-    // containing maps, where the first entry is the key of the issue with the associated value (and the second the
-    // description of the reason). This needs to be flattened to a map with the key of the issue and its associated
-    // value. And while we're here, we can do some error checking.  
-    let raw = yaml.safeLoad(fs.readFileSync(argv["known-issues"], 'utf8'));
-    Object.keys(raw).forEach(resourceId => {
-        knownIssues[resourceId] = {};
-        Object.keys(raw[resourceId]).forEach(fhirPath => {
-            let issues = {};
-            raw[resourceId][fhirPath].forEach(issue => {
-                let key = Object.keys(issue)[0];
-                if (["short", "cardinality"].includes(key)) {
-                    issues[key] = issue[key];
-                } else {
-                    console.error(`Error parsing known issues file: unknown key '${key}'`);
-                    process.exit(1);
-                }
-                if (!("reason" in issue)) {
-                    console.error(`Missing reason for known issue '${key}' in ${resourceId}/${fhirPath}`)
-                    process.exit(1);
-                }
-                issues[key] = issue[key];
-            });
-            knownIssues[resourceId][fhirPath] = issues;
-        })
-    })
+/**
+ * Class to handle purposeful deviations from the zib values in profiles, described in a YAML file. See the help for a
+ * description of the file format.
+ */
+class ZibOverrides {
+    /**
+     * @param {string|null} path - path to the YAML file. May be empty, in which case this class won't do much.
+     */
+    constructor(path = null) {
+        if (path) {
+            this.overrides = yaml.safeLoad(fs.readFileSync(path, 'utf8'));
+        } else {
+            this.overrides = null;
+        }
+    }
+
+    /**
+     * Check if there's a deviation from the zib for the concept of the given element in the given resource.
+     * 
+     * @param {string} resourceId - the resource.id of the current resource
+     * @param {string} elementId - the id of the element
+     * @param {string} key - either cardinality, datatype, alias or 
+     * @returns {null|string} - the overridden value, if found.
+     */
+    check(resourceId, elementId, key) {
+        if (this.overrides == null) return null
+
+        let overridden = null;
+        if (resourceId in this.overrides && this.overrides[resourceId] != null && "zib deviations" in this.overrides[resourceId]) {
+            let zibDeviations = this.overrides[resourceId]["zib deviations"]
+            if (elementId in zibDeviations) {
+                zibDeviations[elementId].forEach(knownIssue => {
+                    if (key in knownIssue) {
+                        if (!("reason" in knownIssue)) {
+                            console.error(`Missing reason for overriding '${key}' in ${resourceId} (${elementId})`)
+                            process.exit(1);
+                        }
+                        overridden = knownIssue[key]
+                    }
+                })
+            }
+        }
+        return overridden
+    }
 }
+var zibOverrides = new ZibOverrides(argv["zib-overrides"]);
 
 var _zibIdsMapped = [];
 
@@ -204,7 +220,7 @@ argv.files.forEach(filename => {
                     }
                 }
                 validated = true;
-
+               
                 // check elements in snapshot for mappings
                 if (resource.snapshot) {
                     resource.snapshot.element.forEach(element => {
@@ -222,25 +238,23 @@ argv.files.forEach(filename => {
                                         return;
                                     }
 
-                                    // Load overrides for the various checks from the object with known issues.
-                                    // Although these known issues target the values found in the StructureDefinition,
-                                    // they will be loaded into the _expected_ zib values to make the comparison work.
-                                    var knownIssue = {};
-                                    if (resource.id in knownIssues && element.path in knownIssues[resource.id]) {
-                                        knownIssue = knownIssues[resource.id][element.path];
-                                    }
-
                                     var reportLine = {
                                         fhir_filename : filename,
                                         fhir_id       : resource.id,
                                         zib_concept_id: zibConceptId,
-                                        fhir_path     : element.path
+                                        fhir_path     : element.id
                                     };
 
                                     var elementShort = element.short.toString();
-                                    var conceptAliasEn = ("short" in knownIssue) ? knownIssue["short"] : concept.alias[0].substring(3).trim();
+                                    var conceptAliasEn = zibOverrides.check(resource.id, element.id, "short")
+                                    if (conceptAliasEn == null) {
+                                        conceptAliasEn = concept.alias[0].substring(3).trim();
+                                    }
                                     var elementAlias = element.alias?element.alias.toString():'';
-                                    var conceptName = concept.name.toString();
+                                    var conceptName = zibOverrides.check(resource.id, element.id, "alias")
+                                    if (conceptName == null) {
+                                        conceptName = concept.name.toString();
+                                    }
 
                                     reportLine.zib_alias_en = conceptAliasEn;
                                     reportLine.fhir_short = elementShort;
@@ -252,7 +266,12 @@ argv.files.forEach(filename => {
                                     if (concept.datatype) {
                                         var fhirDt = (element.type?element.type[0].code:undefined);
                                         var compatible;
-                                        if (concept.datatype == 'II' && fhirDt == "Identifier") compatible = "OK";
+                                        let conceptDt = zibOverrides.check(resource.id, element.id, "datatype");
+                                        if ("conceptDatatype" == null) {
+                                            conceptDt = concept.datatype;
+                                        }
+                                        if (conceptDt == fhirDt) compatible = "OK";
+                                        else if (concept.datatype == 'II' && fhirDt == "Identifier") compatible = "OK";
                                         else if (concept.datatype == 'ST' && fhirDt == "string") compatible = "OK";
                                         else if (concept.datatype == 'ST' && fhirDt == "Annotation") compatible = "OK";
                                         else if (concept.datatype == 'PQ' && fhirDt == "Duration") compatible = "OK";
@@ -300,7 +319,10 @@ argv.files.forEach(filename => {
                                         }
                                     }
                                     if (concept.cardinality) {
-                                        var zibCard = ("cardinality" in knownIssue) ? knownIssue["cardinality"] : concept.cardinality;
+                                        let zibCard = zibOverrides.check(resource.id, element.id, "cardinality");
+                                        if (zibCard == null) {
+                                            zibCard = concept.cardinality;
+                                        }
                                         var fhirCard = element.min + ".." + element.max;
                                         reportLine.zib_card = zibCard;
                                         reportLine.fhir_card = fhirCard;
